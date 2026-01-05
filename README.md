@@ -157,7 +157,7 @@ Flujo Automático (GitHub Actions)
    - Ejecuta build
    - Despliega a GitHub Pages
    ↓
-4. Sitio disponible en: https://tu-usuario.github.io/macos-simulator/
+4. Sitio disponible en: https://github.com/eldaqidedaqi/Mac-virtual-Mac.iso
 Tiempo total: 2-3 minutos
 📦 Dependencias del Proyecto
 Producción
