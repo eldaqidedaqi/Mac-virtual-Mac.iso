@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>macOS Web Simulator</title>
+    <!-- Iconos (FontAwesome) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Fuente (Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- CSS VARIABLES & RESET --- */
+        :root {
+            --bg-color: #000;
+            --dock-bg: rgba(255, 255, 255, 0.2);
+            --window-bg: rgba(255, 255, 255, 0.85);
+            --window-header: #f0f0f0;
+            --accent: #007aff;
+            --text-main: #333;
+            --glass-border: 1px solid rgba(255, 255, 255, 0.4);
+            --shadow-lg: 0 20px 50px rgba(0,0,0,0.3);
+            --shadow-sm: 0 4px 12px rgba(0,0,0,0.1);
+            --font-stack: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --top-bar-height: 28px;
+            --dock-height: 70px;
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: var(--font-stack); background: #000; color: var(--text-main); }
+        
+        /* --- BOOT SCREEN --- */
+        #boot-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 9999; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; transition: opacity 1s ease;
+        }
+        .apple-logo { font-size: 80px; color: #fff; margin-bottom: 40px; }
+        .loading-bar {
+            width: 200px; height: 6px; background: #333; border-radius: 3px; overflow: hidden;
+        }
+        .loading-progress {
+            width: 0%; height: 100%; background: #fff; border-radius: 3px;
+            transition: width 2s ease-in-out;
+        }
+
+        /* --- DESKTOP --- */
+        #desktop {
+            width: 100%; height: 100%;
+            background: url('https://picsum.photos/seed/macosventura/1920/1080') no-repeat center center/cover;
+            position: relative;
+            opacity: 0; transition: opacity 1s;
+        }
+        #desktop-overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0); pointer-events: none; z-index: 1; transition: background 0.3s;
+        }
+
+        /* --- TOP BAR --- */
+        #top-bar {
+            height: var(--top-bar-height); width: 100%;
+            background: rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 20px; font-size: 13px; font-weight: 500; color: #fff;
+            z-index: 5000; position: absolute; top: 0;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+        }
+        .top-left, .top-right { display: flex; gap: 18px; align-items: center; }
+        .top-right i { margin-right: 6px; cursor: pointer; }
+
+        /* --- DESKTOP ICONS --- */
+        .desktop-icons {
+            position: absolute; top: 40px; right: 20px;
+            display: flex; flex-direction: column; gap: 20px; align-items: flex-end;
+            z-index: 10;
+        }
+        .desktop-icon {
+            width: 80px; text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            cursor: pointer;
+        }
+        .desktop-icon i { font-size: 48px; margin-bottom: 5px; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5)); }
+        .desktop-icon span { display: block; padding: 2px 6px; border-radius: 4px; font-size: 12px; background: rgba(0,0,0,0.2); }
+        .desktop-icon:active i { transform: scale(0.95); }
+
+        /* --- WINDOWS SYSTEM --- */
+        #window-area {
+            position: absolute; top: var(--top-bar-height); bottom: var(--dock-height);
+            left: 0; right: 0; pointer-events: none; z-index: 100;
+        }
+        .window {
+            position: absolute; background: var(--window-bg);
+            backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+            border-radius: 10px; border: var(--glass-border);
+            box-shadow: var(--shadow-lg);
+            display: flex; flex-direction: column;
+            pointer-events: auto; overflow: hidden;
+            transition: transform 0.2s, opacity 0.2s, width 0.2s, height 0.2s;
+            min-width: 300px; min-height: 200px;
+            animation: popIn 0.2s ease-out;
+        }
+        @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
+        .title-bar {
+            height: 38px; background: linear-gradient(to bottom, #ebebeb, #d5d5d5);
+            display: flex; align-items: center; padding: 0 12px;
+            border-bottom: 1px solid #c0c0c0; cursor: default;
+        }
+        .traffic-lights { display: flex; gap: 8px; z-index: 10; }
+        .traffic-light { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; position: relative; }
+        .close { background: #ff5f56; } .minimize { background: #ffbd2e; } .maximize { background: #27c93f; }
+        
+        /* Iconos dentro de los botones de tráfico al hacer hover */
+        .traffic-lights:hover .close::after { content: '×'; position: absolute; top: -4px; left: 3px; font-size: 12px; color: #6b0808; }
+        .traffic-lights:hover .minimize::after { content: '-'; position: absolute; top: -5px; left: 4px; font-size: 12px; color: #8a5a00; }
+        .traffic-lights:hover .maximize::after { content: '+'; position: absolute; top: -3px; left: 3px; font-size: 10px; color: #0b5f17; }
+        
+        .window-title {
+            flex-grow: 1; text-align: center; font-weight: 600; color: #555; font-size: 13px;
+            pointer-events: none; margin-right: 50px; /* Balancear visualmente los botones */
+        }
+        .window-content { flex-grow: 1; overflow: auto; position: relative; background: rgba(255,255,255,0.5); }
+        
+        /* Specific App Styles inside Windows */
+        .app-container { padding: 20px; height: 100%; color: #333; }
+        
+        /* Finder */
+        .finder-layout { display: flex; height: 100%; }
+        .finder-sidebar { width: 140px; background: rgba(0,0,0,0.05); padding: 10px; border-right: 1px solid #ccc; }
+        .finder-sidebar li { list-style: none; padding: 5px 10px; font-size: 13px; border-radius: 5px; cursor: pointer; color: #444; display: flex; align-items: center; gap: 8px;}
+        .finder-sidebar li:hover { background: rgba(0,0,0,0.1); }
+        .finder-sidebar li.active { background: #ddd; }
+        .finder-main { flex: 1; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); grid-auto-rows: 90px; gap: 10px; }
+        .file-item { text-align: center; cursor: pointer; padding: 5px; border-radius: 4px; }
+        .file-item:hover { background: #e6e6e6; }
+        .file-item i { font-size: 40px; color: #8ab4f8; margin-bottom: 5px; display: block; }
+        .file-item span { font-size: 12px; color: #333; }
+
+        /* Terminal */
+        .terminal-bg { background: #1e1e1e; color: #33ff00; font-family: 'Courier New', monospace; padding: 10px; height: 100%; font-size: 14px; overflow-y: auto; }
+        .terminal-input { background: transparent; border: none; color: #fff; width: 90%; outline: none; font-family: inherit; }
+
+        /* Calculator */
+        .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; height: 100%; padding: 10px; background: #222; }
+        .calc-display { grid-column: span 4; background: #000; color: #fff; font-size: 2.5rem; text-align: right; padding: 15px; border-radius: 5px; margin-bottom: 10px; display: flex; align-items: center; justify-content: flex-end; font-weight: 300;}
+        .calc-btn { border: none; border-radius: 50%; font-size: 1.2rem; cursor: pointer; background: #505050; color: #fff; transition: filter 0.1s; }
+        .calc-btn:active { filter: brightness(1.3); }
+        .calc-btn.orange { background: #ff9f0a; }
+        .calc-btn.wide { grid-column: span 2; border-radius: 35px; text-align: left; padding-left: 25px; }
+        .calc-btn.grey { background: #d4d4d2; color: #000; }
+        .calc-btn.zero { border-radius: 35px; text-align: left; padding-left: 25px; }
+
+        /* Settings */
+        .settings-container { padding: 30px; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .settings-label { font-size: 15px; font-weight: 500; }
+        input[type="range"] { width: 150px; accent-color: var(--accent); cursor: pointer; }
+        .bg-preview { width: 50px; height: 35px; border-radius: 4px; cursor: pointer; border: 2px solid transparent; }
+        .bg-preview.active { border-color: var(--accent); }
+
+        /* Mail */
+        .mail-layout { display: flex; height: 100%; }
+        .mail-sidebar { width: 200px; background: #f5f5f5; border-right: 1px solid #ddd; padding: 10px; }
+        .mail-list { flex: 1; border-right: 1px solid #ddd; }
+        .mail-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .mail-item:hover { background: #f0f8ff; }
+        .mail-subject { font-weight: 600; font-size: 13px; }
+        .mail-preview { font-size: 12px; color: #666; }
+        .mail-content { flex: 2; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; }
+
+        /* Safari */
+        .safari-toolbar { display: flex; gap: 10px; padding: 8px; background: #eee; border-bottom: 1px solid #ccc; align-items: center; }
+        .url-bar { flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 6px 10px; font-size: 12px; text-align: center; color: #555; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .safari-content { background: #fff; height: calc(100% - 50px); display: flex; flex-direction: column; justify-content: center; align-items: center; color: #888; overflow: hidden; }
+        .fav-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        .fav-item { text-align: center; cursor: pointer; }
+        .fav-icon { width: 60px; height: 60px; background: #f0f0f0; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 5px; font-size: 24px; color: #555; transition: transform 0.1s; }
+        .fav-item:hover .fav-icon { transform: scale(1.05); }
+
+        /* Photos */
+        .photos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 5px; padding: 10px; height: 100%; overflow-y: auto; }
+        .photo-item { width: 100%; aspect-ratio: 1; background: #eee; cursor: pointer; object-fit: cover; border-radius: 2px; transition: opacity 0.2s; }
+        .photo-item:hover { opacity: 0.8; }
+
+        /* Notes */
+        .notes-layout { display: flex; height: 100%; background: #fff; }
+        .notes-sidebar { width: 150px; background: #f5f5f5; border-right: 1px solid #ddd; padding: 10px; }
+        .note-item { padding: 8px; font-size: 12px; border-bottom: 1px solid #e0e0e0; cursor: pointer; font-weight: 500; }
+        .note-item.active { background: #fff; }
+        .notes-editor { flex: 1; padding: 20px; outline: none; font-size: 16px; line-height: 1.5; resize: none; border: none; font-family: inherit; }
+
+        /* Calendar */
+        .calendar-header { text-align: center; padding: 20px; font-weight: bold; color: #ff3b30; font-size: 1.2rem; background: #fff; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; padding: 10px; background: #f5f5f5; height: 100%; }
+        .cal-day-header { font-weight: bold; font-size: 10px; color: #999; padding: 10px 0; }
+        .cal-day { padding: 10px; font-size: 13px; border-radius: 50%; cursor: pointer; }
+        .cal-day:hover { background: #e0e0e0; }
+        .cal-day.today { background: #ff3b30; color: white; }
+
+        /* --- DOCK --- */
+        #dock-container {
+            position: absolute; bottom: 10px; width: 100%; display: flex; justify-content: center; z-index: 6000;
+        }
+        .dock {
+            background: var(--dock-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.2);
+            height: 65px; border-radius: 18px; display: flex; align-items: center; padding: 0 10px; gap: 12px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2); transition: width 0.2s;
+        }
+        .dock-item {
+            width: 50px; height: 50px; border-radius: 12px; position: relative; cursor: pointer;
+            transition: transform 0.2s ease, margin 0.2s ease; display: flex; align-items: center; justify-content: center;
+            font-size: 28px; color: #fff;
+            background: linear-gradient(135deg, #ddd, #fff);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .dock-item:hover { transform: scale(1.2) translateY(-10px); margin: 0 10px; }
+        .dock-item.active::after {
+            content: ''; position: absolute; bottom: -8px; width: 4px; height: 4px; background: #333; border-radius: 50%;
+        }
+        /* App Colors for Dock */
+        .app-finder { background: linear-gradient(180deg, #1c92d2, #0f6c9b); color: white; }
+        .app-safari { background: #fff; color: #1c92d2; }
+        .app-mail { background: linear-gradient(180deg, #4da1ff, #007aff); color: white; }
+        .app-photos { background: #fff; }
+        .app-music { background: linear-gradient(to right, #fa2d48, #fa85d2); color: white; }
+        .app-settings { background: #aaa; color: #333; }
+        .app-calc { background: #ff9f0a; color: white; }
+        .app-terminal { background: #333; color: #0f0; border: 1px solid #555; }
+        .app-notes { background: #f8c926; color: #fff; }
+        .app-calendar { background: #fff; color: #ff3b30; }
+        
+        .tooltip {
+            position: absolute; top: -40px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: #fff; padding: 4px 8px; border-radius: 4px;
+            font-size: 12px; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        .dock-item:hover .tooltip { opacity: 1; }
+
+        /* --- SPOTLIGHT --- */
+        #spotlight {
+            position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+            width: 600px; background: rgba(255,255,255,0.85); backdrop-filter: blur(25px);
+            border-radius: 12px; box-shadow: var(--shadow-lg); z-index: 7000;
+            display: none; flex-direction: column; overflow: hidden;
+        }
+        .spotlight-input {
+            width: 100%; border: none; background: transparent; padding: 20px;
+            font-size: 24px; outline: none; color: #333;
+        }
+        .spotlight-results { border-top: 1px solid rgba(0,0,0,0.1); max-height: 300px; overflow-y: auto; }
+        .spotlight-item {
+            padding: 10px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer;
+        }
+        .spotlight-item:hover { background: #007aff; color: white; }
+        .spotlight-icon { width: 30px; text-align: center; font-size: 18px; }
+
+        /* --- NOTIFICATIONS --- */
+        .toast-container { position: fixed; top: 40px; right: 10px; z-index: 8000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast {
+            background: rgba(255,255,255,0.9); backdrop-filter: blur(10px);
+            padding: 12px 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            display: flex; align-items: center; gap: 10px; width: 300px;
+            animation: slideIn 0.3s ease-out; pointer-events: auto;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast-icon { font-size: 24px; color: var(--accent); }
+        .toast-content h4 { margin: 0; font-size: 13px; }
+        .toast-content p { margin: 2px 0 0; font-size: 11px; color: #666; }
+
+        /* --- UTILS --- */
+        .hidden { display: none !important; }
+        .no-select { user-select: none; }
+        
+        /* Responsive Mobile Fixes */
+        @media (max-width: 768px) {
+            .dock { padding: 0 5px; gap: 5px; height: 55px; }
+            .dock-item { width: 40px; height: 40px; font-size: 20px; }
+            .window { width: 100% !important; height: calc(100% - 100px) !important; top: 0 !important; left: 0 !important; border-radius: 0; }
+            #spotlight { width: 90%; top: 10%; }
+            .finder-sidebar { display: none; } /* Ocultar sidebar en móvil para espacio */
+            .mail-sidebar { display: none; }
+            .notes-sidebar { display: none; }
+            .notes-layout { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- PANTALLA DE ARRANQUE -->
+    <div id="boot-screen">
+        <i class="fab fa-apple apple-logo"></i>
+        <div class="loading-bar">
+            <div class="loading-progress" id="boot-progress"></div>
+        </div>
+    </div>
+
+    <!-- ESCRITORIO -->
+    <div id="desktop">
+        <div id="desktop-overlay"></div>
+        
+        <!-- Barra Superior -->
+        <nav id="top-bar">
+            <div class="top-left">
+                <i class="fab fa-apple"></i>
+                <span id="active-app-name">Finder</span>
+                <span>Archivo</span>
+                <span>Edición</span>
+                <span>Vista</span>
+                <span>Ir</span>
+                <span>Ventana</span>
+                <span>Ayuda</span>
+            </div>
+            <div class="top-right">
+                <i class="fas fa-battery-three-quarters"></i>
+                <i class="fas fa-wifi"></i>
+                <i class="fas fa-search" onclick="toggleSpotlight()"></i>
+                <i class="fas fa-sliders-h" onclick="openApp('settings')"></i>
+                <span id="clock">12:00</span>
+            </div>
+        </nav>
+
+        <!-- Iconos de Escritorio -->
+        <div class="desktop-icons">
+            <div class="desktop-icon" ondblclick="openApp('finder')">
+                <i class="fas fa-hdd" style="color: #ddd;"></i>
+                <span>Macintosh HD</span>
+            </div>
+            <div class="desktop-icon" ondblclick="openWindow('github')">
+                <i class="fab fa-github" style="color: #fff;"></i>
+                <span>Repositorio</span>
+            </div>
+        </div>
+
+        <!-- Área de Ventanas -->
+        <div id="window-area"></div>
+
+        <!-- Dock -->
+        <div id="dock-container">
+            <div class="dock">
+                <div class="dock-item app-finder" onclick="openApp('finder')" title="Finder">
+                    <i class="fas fa-face-smile"></i>
+                    <span class="tooltip">Finder</span>
+                </div>
+                <div class="dock-item app-safari" onclick="openApp('safari')" title="Safari">
+                    <i class="fab fa-safari"></i>
+                    <span class="tooltip">Safari</span>
+                </div>
+                <div class="dock-item app-mail" onclick="openApp('mail')" title="Mail">
+                    <i class="fas fa-envelope"></i>
+                    <span class="tooltip">Mail</span>
+                </div>
+                <div class="dock-item app-photos" onclick="openApp('photos')" title="Photos">
+                    <i class="fas fa-image"></i>
+                    <span class="tooltip">Fotos</span>
+                </div>
+                <div class="dock-item app-music" onclick="openApp('music')" title="Music">
+                    <i class="fas fa-music"></i>
+                    <span class="tooltip">Música</span>
+                </div>
+                <div class="dock-item app-calc" onclick="openApp('calculator')" title="Calculator">
+                    <i class="fas fa-calculator"></i>
+                    <span class="tooltip">Calculadora</span>
+                </div>
+                <div class="dock-item app-terminal" onclick="openApp('terminal')" title="Terminal">
+                    <i class="fas fa-terminal"></i>
+                    <span class="tooltip">Terminal</span>
+                </div>
+                <div class="dock-item app-notes" onclick="openApp('notes')" title="Notes">
+                    <i class="fas fa-sticky-note"></i>
+                    <span class="tooltip">Notas</span>
+                </div>
+                <div class="dock-item app-calendar" onclick="openApp('calendar')" title="Calendar">
+                    <i class="fas fa-calendar-day"></i>
+                    <span class="tooltip">Calendario</span>
+                </div>
+                <div class="dock-item app-settings" onclick="openApp('settings')" title="Settings">
+                    <i class="fas fa-cog"></i>
+                    <span class="tooltip">Ajustes</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spotlight -->
+        <div id="spotlight">
+            <input type="text" class="spotlight-input" placeholder="Spotlight Search" id="spotlight-input" oninput="handleSpotlight(this.value)">
+            <div class="spotlight-results" id="spotlight-results"></div>
+        </div>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toast-container"></div>
+    </div>
+
+    <script>
+        // --- ESTADO GLOBAL ---
+        const state = {
+            windows: {},
+            zIndex: 100,
+            activeWindow: null,
+            bootTime: 2500
+        };
+
+        // --- DEFINICIÓN DE APLICACIONES ---
+        const apps = {
+            finder: {
+                title: 'Finder',
+                icon: 'fa-face-smile',
+                width: 600, height: 400,
+                content: `
+                    <div class="finder-layout">
+                        <ul class="finder-sidebar">
+                            <li class="active"><i class="fas fa-laptop"></i> Escritorio</li>
+                            <li><i class="fas fa-file-alt"></i> Documentos</li>
+                            <li><i class="fas fa-download"></i> Descargas</li>
+                            <li><i class="fas fa-images"></i> Imágenes</li>
+                        </ul>
+                        <div class="finder-main">
+                            <div class="file-item" onclick="showToast('Abrir carpeta', 'Proyectos')"><i class="fas fa-folder"></i><span>Proyectos</span></div>
+                            <div class="file-item" onclick="showToast('Abrir carpeta', 'Trabajo')"><i class="fas fa-folder"></i><span>Trabajo</span></div>
+                            <div class="file-item"><i class="fas fa-file-pdf"></i><span>Curriculum.pdf</span></div>
+                            <div class="file-item"><i class="fas fa-file-image"></i><span>Foto.jpg</span></div>
+                            <div class="file-item"><i class="fas fa-file-code"></i><span>index.html</span></div>
+                        </div>
+                    </div>
+                `
+            },
+            safari: {
+                title: 'Safari',
+                icon: 'fab fa-safari',
+                width: 800, height: 500,
+                content: `
+                    <div style="height:100%; display:flex; flex-direction:column;">
+                        <div class="safari-toolbar">
+                            <i class="fas fa-chevron-left" style="color:#aaa;"></i><i class="fas fa-chevron-right" style="color:#aaa;"></i>
+                            <div class="url-bar"><i class="fas fa-lock" style="font-size:10px; margin-right:5px;"></i> apple.com</div>
+                            <i class="fas fa-redo"></i>
+                        </div>
+                        <div class="safari-content">
+                            <i class="fab fa-apple" style="font-size: 80px; color: #333; margin-bottom: 20px;"></i>
+                            <h2>Bienvenido a Safari</h2>
+                            <p>Navegación simulada por seguridad.</p>
+                            <div class="fav-grid">
+                                <div class="fav-item"><div class="fav-icon" style="background:#fff; border:1px solid #ddd;"><i class="fab fa-wikipedia-w"></i></div><span>Wiki</span></div>
+                                <div class="fav-item"><div class="fav-icon" style="background:#333; color:#fff;"><i class="fab fa-github"></i></div><span>GitHub</span></div>
+                                <div class="fav-item"><div class="fav-icon" style="background:#ff0000; color:#fff;"><i class="fab fa-youtube"></i></div><span>YouTube</span></div>
+                                <div class="fav-item"><div class="fav-icon" style="background:#1da1f2; color:#fff;"><i class="fab fa-twitter"></i></div><span>Twitter</span></div>
+                            </div>
+                        </div>
+                    </div>
+                `
+            },
+            terminal: {
+                title: 'Terminal - zsh',
+                icon: 'fas fa-terminal',
+                width: 500, height: 300,
+                content: `
+                    <div class="terminal-bg" id="term-output">
+                        <div>Last login: ${new Date().toDateString()} on ttys001</div>
+                        <div style="margin-top:10px;">Type 'help' for commands.</div>
+                        <div style="display:flex; margin-top:5px;">
+                            <span style="color:#33ff00; margin-right:5px;">user@macbook:~$</span>
+                            <input type="text" class="terminal-input" id="term-input" autocomplete="off" spellcheck="false" onkeydown="handleTerminal(event)">
+                        </div>
+                    </div>
+                `
+            },
+            calculator: {
+                title: 'Calculadora',
+                icon: 'fas fa-calculator',
+                width: 250, height: 350,
+                content: `
+                    <div class="calc-grid">
+                        <div class="calc-display" id="calc-display">0</div>
+                        <button class="calc-btn grey" onclick="calcOp('C')">AC</button>
+                        <button class="calc-btn grey" onclick="calcOp('+/-')">+/-</button>
+                        <button class="calc-btn grey" onclick="calcOp('%')">%</button>
+                        <button class="calc-btn orange" onclick="calcOp('/')">÷</button>
+                        <button class="calc-btn" onclick="calcNum('7')">7</button>
+                        <button class="calc-btn" onclick="calcNum('8')">8</button>
+                        <button class="calc-btn" onclick="calcNum('9')">9</button>
+                        <button class="calc-btn orange" onclick="calcOp('*')">×</button>
+                        <button class="calc-btn" onclick="calcNum('4')">4</button>
+                        <button class="calc-btn" onclick="calcNum('5')">5</button>
+                        <button class="calc-btn" onclick="calcNum('6')">6</button>
+                        <button class="calc-btn orange" onclick="calcOp('-')">-</button>
+                        <button class="calc-btn" onclick="calcNum('1')">1</button>
+                        <button class="calc-btn" onclick="calcNum('2')">2</button>
+                        <button class="calc-btn" onclick="calcNum('3')">3</button>
+                        <button class="calc-btn orange" onclick="calcOp('+')">+</button>
+                        <button class="calc-btn zero" onclick="calcNum('0')">0</button>
+                        <button class="calc-btn" onclick="calcNum('.')">.</button>
+                        <button class="calc-btn orange" onclick="calcOp('=')">=</button>
+                    </div>
+                `
+            },
+            settings: {
+                title: 'Ajustes del Sistema',
+                icon: 'fas fa-cog',
+                width: 500, height: 400,
+                content: `
+                    <div class="settings-container">
+                        <div class="settings-row">
+                            <span class="settings-label">Brillo de pantalla</span>
+                            <input type="range" min="0" max="100" value="80">
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Volumen</span>
+                            <i class="fas fa-volume-up" style="color:#666; margin-right:10px;"></i>
+                            <input type="range" min="0" max="100" value="50">
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Fondo de pantalla</span>
+                            <div style="display:flex; gap:10px;">
+                                <div class="bg-preview active" style="background:url('https://picsum.photos/seed/macosventura/100/100') center/cover;" onclick="changeBg(this, 'macosventura')"></div>
+                                <div class="bg-preview" style="background:url('https://picsum.photos/seed/mountains/100/100') center/cover;" onclick="changeBg(this, 'mountains')"></div>
+                                <div class="bg-preview" style="background:url('https://picsum.photos/seed/abstract/100/100') center/cover;" onclick="changeBg(this, 'abstract')"></div>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Modo Oscuro</span>
+                            <i class="fas fa-toggle-off" style="font-size:24px; color:#aaa; cursor:pointer;" onclick="toggleTheme(this)"></i>
+                        </div>
+                    </div>
+                `
+            },
+            mail: {
+                title: 'Mail',
+                icon: 'fas fa-envelope',
+                width: 700, height: 450,
+                content: `
+                    <div class="mail-layout">
+                        <div class="mail-sidebar">
+                            <div style="font-weight:bold; margin-bottom:10px; color:#555;">BANDEJAS</div>
+                            <div style="color:#007aff; background:#e6f2ff; padding:5px; border-radius:5px; cursor:pointer;">☰ Bandeja de entrada (3)</div>
+                            <div style="padding:5px; cursor:pointer;">📤 Enviados</div>
+                            <div style="padding:5px; cursor:pointer;">🗑 Papelera</div>
+                        </div>
+                        <div class="mail-list">
+                            <div class="mail-item">
+                                <div class="mail-subject">Apple</div>
+                                <div class="mail-preview">Tu ID de Apple se ha utilizado...</div>
+                                <div style="font-size:10px; color:#999;">10:30 AM</div>
+                            </div>
+                            <div class="mail-item">
+                                <div class="mail-subject">GitHub</div>
+                                <div class="mail-preview">[GitHub] Se ha creado un issue...</div>
+                                <div style="font-size:10px; color:#999;">Ayer</div>
+                            </div>
+                            <div class="mail-item">
+                                <div class="mail-subject">LinkedIn</div>
+                                <div class="mail-preview">Miguel ha visto tu perfil...</div>
+                                <div style="font-size:10px; color:#999;">Lunes</div>
+                            </div>
+                        </div>
+                        <div class="mail-content">
+                            <i class="far fa-envelope-open" style="font-size:40px; margin-bottom:10px;"></i>
+                            <p>Selecciona un mensaje para leerlo</p>
+                        </div>
+                    </div>
+                `
+            },
+            photos: {
+                title: 'Fotos',
+                icon: 'fas fa-image',
+                width: 600, height: 400,
+                content: `
+                    <div class="photos-grid">
+                        <img src="https://picsum.photos/seed/p1/200/200" class="photo-item" onclick="showToast('Fotos', 'Imagen seleccionada')">
+                        <img src="https://picsum.photos/seed/p2/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p3/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p4/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p5/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p6/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p7/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p8/200/200" class="photo-item">
+                        <img src="https://picsum.photos/seed/p9/200/200" class="photo-item">
+                    </div>
+                `
+            },
+            music: {
+                title: 'Música',
+                icon: 'fas fa-music',
+                width: 400, height: 500,
+                content: `
+                    <div style="padding:20px; text-align:center; background:linear-gradient(to bottom, #333, #111); height:100%; color:white;">
+                        <div style="width:150px; height:150px; background:#444; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+                            <i class="fas fa-music" style="font-size:50px; color:#aaa;"></i>
+                        </div>
+                        <h3 style="margin:0;">No Reproduciendo</h3>
+                        <p style="color:#888; margin:5px 0 20px;">Selecciona una canción</p>
+                        <div style="font-size:24px; display:flex; justify-content:center; gap:20px;">
+                            <i class="fas fa-backward"></i>
+                            <i class="fas fa-play-circle" style="color:#fa2d48; cursor:pointer;" onclick="showToast('Música', 'Reproduciendo demo...')"></i>
+                            <i class="fas fa-forward"></i>
+                        </div>
+                    </div>
+                `
+            },
+            notes: {
+                title: 'Notas',
+                icon: 'fas fa-sticky-note',
+                width: 500, height: 400,
+                content: `
+                    <div class="notes-layout">
+                        <div class="notes-sidebar">
+                            <div class="note-item active">Lista de compras</div>
+                            <div class="note-item">Idea App</div>
+                            <div class="note-item">Recordatorios</div>
+                        </div>
+                        <textarea class="notes-editor">Leche
+Huevos
+Pan
+Café</textarea>
+                    </div>
+                `
+            },
+            calendar: {
+                title: 'Calendario',
+                icon: 'fas fa-calendar-day',
+                width: 350, height: 350,
+                content: `
+                    <div class="calendar-header">Octubre 2023</div>
+                    <div class="calendar-grid" id="calendar-grid">
+                        <!-- JS generará el calendario -->
+                    </div>
+                `
+            }
+        };
+
+        // --- FUNCIONES DE SISTEMA ---
+
+        // 1. Arranque
+        window.onload = function() {
+            const bar = document.getElementById('boot-progress');
+            const screen = document.getElementById('boot-screen');
+            const desktop = document.getElementById('desktop');
+
+            setTimeout(() => { bar.style.width = '100%'; }, 100);
+            
+            setTimeout(() => {
+                screen.style.opacity = '0';
+                setTimeout(() => {
+                    screen.style.display = 'none';
+                    desktop.style.opacity = '1';
+                    showToast('Bienvenido', 'Sistema cargado correctamente');
+                }, 1000);
+            }, state.bootTime);
+
+            updateClock();
+            setInterval(updateClock, 1000);
+            generateCalendar();
+        };
+
+        // 2. Reloj
+        function updateClock() {
+            const now = new Date();
+            const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+            const day = days[now.getDay()];
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('clock').innerText = `${day} ${hours}:${minutes}`;
+        }
+
+        // 3. Generador de Ventanas
+        function openApp(appId) {
+            if (!apps[appId]) return;
+            openWindow(appId);
+            
+            // Marcar activo en dock
+            const dockItems = document.querySelectorAll('.dock-item');
+            dockItems.forEach(item => {
+                item.classList.remove('active');
+                if(item.classList.contains(`app-${appId}`)) item.classList.add('active');
+            });
+        }
+
+        function openWindow(appId) {
+            const app = apps[appId];
+            
+            // Si la ventana ya existe, traer al frente
+            if (document.getElementById(`win-${appId}`)) {
+                focusWindow(appId);
+                // Restaurar si estaba minimizada
+                const win = document.getElementById(`win-${appId}`);
+                win.style.display = 'flex';
+                return;
+            }
+
+            // Crear ventana
+            const winArea = document.getElementById('window-area');
+            const win = document.createElement('div');
+            win.id = `win-${appId}`;
+            win.className = 'window';
+            win.style.width = app.width + 'px';
+            win.style.height = app.height + 'px';
+            // Posición aleatoria ligera para que no se superpongan exacto
+            const top = 50 + (Object.keys(state.windows).length * 20);
+            const left = 50 + (Object.keys(state.windows).length * 20);
+            win.style.top = top + 'px';
+            win.style.left = left + 'px';
+            win.style.zIndex = ++state.zIndex;
+
+            win.innerHTML = `
+                <div class="title-bar" onmousedown="startDrag(event, '${appId}')">
+                    <div class="traffic-lights">
+                        <div class="traffic-light close" onclick="closeWindow('${appId}')"></div>
+                        <div class="traffic-light minimize" onclick="minimizeWindow('${appId}')"></div>
+                        <div class="traffic-light maximize" onclick="maximizeWindow('${appId}')"></div>
+                    </div>
+                    <div class="window-title">${app.title}</div>
+                </div>
+                <div class="window-content" onclick="focusWindow('${appId}')">
+                    ${app.content}
+                </div>
+            `;
+
+            winArea.appendChild(win);
+            state.windows[appId] = win;
+            focusWindow(appId);
+        }
+
+        function closeWindow(appId) {
+            const win = document.getElementById(`win-${appId}`);
+            if (win) {
+                win.style.opacity = '0';
+                win.style.transform = 'scale(0.9)';
+                setTimeout(() => {
+                    win.remove();
+                    delete state.windows[appId];
+                    // Quitar punto activo del dock si no quedan ventanas (lógica simplificada)
+                }, 200);
+            }
+        }
+
+        function minimizeWindow(appId) {
+            const win = document.getElementById(`win-${appId}`);
+            if(win) {
+                win.style.transition = "all 0.5s ease";
+                win.style.transform = "translate(0, 500px) scale(0.1)";
+                win.style.opacity = "0";
+                setTimeout(() => { win.style.display = 'none'; win.style.transform = ""; win.style.transition = ""; }, 500);
+            }
+        }
+
+        function maximizeWindow(appId) {
+            const win = document.getElementById(`win-${appId}`);
+            if (win.style.width === '100%') {
+                // Restaurar
+                const app = apps[appId];
+                win.style.width = app.width + 'px';
+                win.style.height = app.height + 'px';
+                win.style.top = '100px';
+                win.style.left = '100px';
+                win.style.borderRadius = '10px';
+            } else {
+                // Maximizar
+                win.style.width = '100%';
+                win.style.height = 'calc(100% - var(--dock-height) - var(--top-bar-height))';
+                win.style.top = '0';
+                win.style.left = '0';
+                win.style.borderRadius = '0';
+            }
+        }
+
+        function focusWindow(appId) {
+            const win = document.getElementById(`win-${appId}`);
+            if (win) {
+                win.style.zIndex = ++state.zIndex;
+                document.getElementById('active-app-name').innerText = apps[appId].title;
+                
+                // Resaltar sidebar de finder si es finder
+                if(appId === 'finder') {
+                    // Lógica visual simple
+                }
+            }
+        }
+
+        // 4. Lógica de Arrastre (Drag)
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let currentDragWin = null;
+
+        function startDrag(e, appId) {
+            if(e.target.classList.contains('traffic-light')) return; // No arrastrar si clic en botones
+            focusWindow(appId);
+            isDragging = true;
+            currentDragWin = document.getElementById(`win-${appId}`);
+            const rect = currentDragWin.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && currentDragWin) {
+                e.preventDefault();
+                let x = e.clientX - dragOffset.x;
+                let y = e.clientY - dragOffset.y;
+                
+                // Límites básicos
+                if(y < 28) y = 28; // No subir arriba del top bar
+
+                currentDragWin.style.left = x + 'px';
+                currentDragWin.style.top = y + 'px';
+                
+                // Si estaba maximizado, restaurar dimensiones al arrastrar (comportamiento tipo Mac)
+                if(currentDragWin.style.width === '100%') {
+                     const app = apps[currentDragWin.id.replace('win-', '')];
+                     currentDragWin.style.width = app.width + 'px';
+                     currentDragWin.style.height = app.height + 'px';
+                     currentDragWin.style.borderRadius = '10px';
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            currentDragWin = null;
+        });
+
+        // 5. Calculadora
+        let calcVal = '0';
+        function calcNum(n) {
+            if(calcVal === '0' && n !== '.') calcVal = '';
+            calcVal += n;
+            updateCalc();
+        }
+        function calcOp(op) {
+            if(op === 'C') {
+                calcVal = '0';
+            } else if (op === '=') {
+                try {
+                    // Seguridad básica: solo permitir caracteres matemáticos
+                    const safeExpr = calcVal.replace(/[^0-9+\-*/.%]/g, ''); 
+                    calcVal = String(eval(safeExpr));
+                } catch {
+                    calcVal = 'Error';
+                }
+            } else {
+                if(op === '+/-') {
+                    calcVal = String(parseFloat(calcVal) * -1);
+                } else {
+                    calcVal += op;
+                }
+            }
+            updateCalc();
+        }
+        function updateCalc() {
+            const display = document.getElementById('calc-display');
+            if(display) display.innerText = calcVal;
+        }
+
+        // 6. Terminal
+        function handleTerminal(e) {
+            if(e.key === 'Enter') {
+                const input = e.target;
+                const output = document.getElementById('term-output');
+                const cmd = input.value.trim().toLowerCase();
+                
+                // Crear línea de comando previa
+                const cmdLine = document.createElement('div');
+                cmdLine.innerHTML = `<span style="color:#33ff00; margin-right:5px;">user@macbook:~$</span> ${input.value}`;
+                output.insertBefore(cmdLine, input.parentElement);
+
+                // Respuesta
+                let response = '';
+                switch(cmd) {
+                    case 'help': response = 'Comandos: help, date, clear, echo [texto], whoami, reboot'; break;
+                    case 'date': response = new Date().toString(); break;
+                    case 'clear': 
+                        // Eliminar todos los hermanos previos al input
+                        while(output.firstChild && output.firstChild !== input.parentElement) {
+                            output.removeChild(output.firstChild);
+                        }
+                        input.value = '';
+                        return; // Salir temprano
+                    case 'whoami': response = 'root'; break;
+                    case 'reboot': location.reload(); return;
+                    default: 
+                        if(cmd.startsWith('echo ')) {
+                            response = input.value.substring(5);
+                        } else if(cmd !== '') {
+                            response = `zsh: command not found: ${cmd}`;
+                        }
+                }
+                
+                if(response) {
+                    const respLine = document.createElement('div');
+                    respLine.style.color = '#fff';
+                    respLine.style.marginBottom = '10px';
+                    respLine.innerText = response;
+                    output.insertBefore(respLine, input.parentElement);
+                }
+
+                input.value = '';
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        // 7. Spotlight
+        function toggleSpotlight() {
+            const spot = document.getElementById('spotlight');
+            if(spot.style.display === 'flex') {
+                spot.style.display = 'none';
+            } else {
+                spot.style.display = 'flex';
+                document.getElementById('spotlight-input').focus();
+            }
+        }
+
+        function handleSpotlight(val) {
+            const results = document.getElementById('spotlight-results');
+            results.innerHTML = '';
+            if(!val) return;
+
+            const term = val.toLowerCase();
+            let matches = 0;
+            
+            for (const key in apps) {
+                if(apps[key].title.toLowerCase().includes(term)) {
+                    matches++;
+                    const div = document.createElement('div');
+                    div.className = 'spotlight-item';
+                    div.innerHTML = `<div class="spotlight-icon"><i class="${apps[key].icon}"></i></div><div>${apps[key].title}</div>`;
+                    div.onclick = () => {
+                        openApp(key);
+                        toggleSpotlight();
+                    };
+                    results.appendChild(div);
+                }
+                if(matches > 5) break;
+            }
+        }
+
+        // 8. Utilidades
+        function showToast(title, msg) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <i class="fas fa-bell toast-icon"></i>
+                <div class="toast-content">
+                    <h4>${title}</h4>
+                    <p>${msg}</p>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function changeBg(el, seed) {
+            document.querySelectorAll('.bg-preview').forEach(d => d.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('desktop').style.backgroundImage = `url('https://picsum.photos/seed/${seed}/1920/1080')`;
+        }
+
+        function toggleTheme(el) {
+            if(el.classList.contains('fa-toggle-off')) {
+                el.classList.remove('fa-toggle-off');
+                el.classList.add('fa-toggle-on');
+                el.style.color = '#34c759';
+                document.documentElement.style.setProperty('--window-bg', 'rgba(40, 40, 40, 0.85)');
+                document.documentElement.style.setProperty('--text-main', '#eee');
+            } else {
+                el.classList.remove('fa-toggle-on');
+                el.classList.add('fa-toggle-off');
+                el.style.color = '#aaa';
+                document.documentElement.style.setProperty('--window-bg', 'rgba(255, 255, 255, 0.85)');
+                document.documentElement.style.setProperty('--text-main', '#333');
+            }
+        }
+
+        function generateCalendar() {
+            const grid = document.getElementById('calendar-grid');
+            if(!grid) return;
+            // Headers
+            ['D', 'L', 'M', 'X', 'J', 'V', 'S'].forEach(d => {
+                grid.innerHTML += `<div class="cal-day-header">${d}</div>`;
+            });
+            // Empty cells
+            for(let i=0; i<3; i++) grid.innerHTML += `<div></div>`;
+            // Days
+            for(let i=1; i<=31; i++) {
+                const cls = i === 24 ? 'cal-day today' : 'cal-day';
+                grid.innerHTML += `<div class="${cls}">${i}</div>`;
+            }
+        }
+
+        // Cerrar spotlight con Esc
+        document.addEventListener('keydown', (e) => {
+            if(e.key === 'Escape') {
+                const spot = document.getElementById('spotlight');
+                if(spot.style.display === 'flex') spot.style.display = 'none';
+            }
+            // Cmd/Ctrl + Space simulado (tecla K)
+            if((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                toggleSpotlight();
+            }
+        });
+
+    </script>
+</body>
+</html>
+
